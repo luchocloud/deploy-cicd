@@ -1,46 +1,41 @@
-name: Deployment CI/CD Pipeline
+name: Wazuh CI/CD Pipeline
 
-# Trigger the workflow on pushes to the main branch
 on:
   push:
     branches:
-      - main
+      - master  # This triggers the pipeline when changes are pushed to the master branch
+  pull_request:
+    branches:
+      - master  # This triggers the pipeline when a pull request is made to master
 
 jobs:
-  # Test job: Check Wazuh configurations
-  test:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
-        
-      - name: Set up Docker
-        uses: docker/setup-buildx-action@v2
-
-      - name: Build Wazuh container
-        run: |
-          docker pull wazuh/wazuh:latest
-
-      - name: Run automated tests on Wazuh configurations
-        run: |
-          docker run --rm -v ${{ github.workspace }}/wazuh_rules:/wazuh_rules wazuh/wazuh:latest \
-            /bin/bash -c "run-wazuh-tests.sh"  # Replace with actual test command or script
-
-  # Deploy job: Deploy updated Wazuh rules to the Wazuh container
   deploy:
     runs-on: ubuntu-latest
-    needs: test  # Ensure deploy only runs if tests pass
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v2
+    - name: Checkout code
+      uses: actions/checkout@v2
 
-      - name: Set up Docker
-        uses: docker/setup-buildx-action@v2
+    - name: Set up Docker
+      uses: docker/setup-buildx-action@v1
 
-      - name: Deploy Wazuh detection rules
-        run: |
-          docker pull wazuh/wazuh:latest
-          docker run --rm -v ${{ github.workspace }}/wazuh_rules:/wazuh_rules wazuh/wazuh:latest \
-            /bin/bash -c "cp /wazuh_rules/*.xml /var/ossec/etc/rules/ && /var/ossec/bin/ossec-control restart"
+    - name: Build Wazuh Manager Docker image (if needed)
+      run: |
+        docker build -t wazuh-manager:latest .
+    
+    - name: Run Wazuh Manager Docker container
+      run: |
+        docker run -d --name wazuh-manager -p 1514:1514 -p 1515:1515 -p 514:514/udp -p 55000:55000 wazuh-manager:latest
+
+    - name: Copy custom rules to Wazuh container
+      run: |
+        docker cp custom-rules.xml wazuh-manager:/var/ossec/etc/rules/custom-rules.xml
+
+    - name: Restart Wazuh Manager service
+      run: |
+        docker exec wazuh-manager /bin/bash -c "/var/ossec/bin/ossec-control restart"
+
+    - name: Run Tests (optional)
+      run: |
+        # This step can be used to run tests for your configurations
+        echo "Tests can be added here"
